@@ -632,6 +632,9 @@
       return
     } else if (message.headers?.type === 'start-stop') {
       var startStop = message.body
+      if (recognizing === startStop.isStarted) {
+        return
+      }
       startButton({ timeStamp: new Date().getTime() })
       return
     }
