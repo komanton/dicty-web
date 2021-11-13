@@ -642,52 +642,7 @@
     select_dialect.style.visibility = list[1].length == 1 ? 'hidden' : 'visible';
   }
 
-  const socket = new WebSocket("ws://localhost:5857");
-  socket.onmessage = function (event) {
-    var message = JSON.parse(event.data)
-    console.log(message)
-    if (message.headers?.type === 'init') {
-      alert(message.body)      
-      return
-    } else if (message.headers?.type === 'start-stop') {
-      var startStop = message.body
-      if (recognizing === startStop.isStarted) {
-        return
-      }
-      startButton({ timeStamp: new Date().getTime() })
-      return
-    } else if (message.headers?.type === 'language') {
-      var body = message.body
-      if (!body.language) {
-        const currentDialect = select_dialect.value
-        let indexInNavigarot = navigator.languages.indexOf(currentDialect)
-        indexInNavigarot = indexInNavigarot === -1
-          ? navigator.languages.indexOf(currentDialect.substr(0,2)) : indexInNavigarot
-        const nextIndex = indexInNavigarot === (navigator.languages.length - 1) ? 0 : (indexInNavigarot + 1)
-        const nextDialect = navigator.languages[nextIndex]
-
-        const [langIndex, dialectIndex] = indexOfDialect(nextDialect)
-        select_language.selectedIndex = langIndex;
-        updateCountry();
-        select_dialect.selectedIndex = dialectIndex;
-        console.log('Current: dialect:', select_dialect.value)
-
-        console.log('Need re-start:', recognizing)
-        // re-start
-        if (recognizing) {
-          restarting = true
-          startButton({ timeStamp: new Date().getTime() })
-        }
-      }
-      return
-    }
-
-
-    //document.getElementById("storage").innerHTML = data
-  }
-  socket.onopen = function () {
-    // socket.send('Hello server!')
-  }
+  
   var langs =
     [['Afrikaans', ['af-ZA']],
     ['Bahasa Indonesia', ['id-ID']],
@@ -939,6 +894,66 @@
     copy_button.style.display = style;
     copy_info.style.display = 'none';
   }
+
+  const socket = new WebSocket("ws://localhost:5857");
+  socket.onmessage = function (event) {
+    var message = JSON.parse(event.data)
+    console.log(message)
+    if (message.headers?.type === 'init') {
+      const currentDialect = select_dialect.value
+      socket.send(JSON.stringify({
+        headers: { type: 'language' },
+        body: { language: currentDialect }
+      }))
+      alert(message.body)
+      return
+    } else if (message.headers?.type === 'start-stop') {
+      var startStop = message.body
+      if (recognizing === startStop.isStarted) {
+        return
+      }
+      startButton({ timeStamp: new Date().getTime() })
+      return
+    } else if (message.headers?.type === 'language') {
+      var body = message.body
+      const currentDialect = select_dialect.value
+      if (!body.language || currentDialect !== body.language) {
+        const currentDialect = select_dialect.value
+        let indexInNavigarot = navigator.languages.indexOf(currentDialect)
+        indexInNavigarot = indexInNavigarot === -1
+          ? navigator.languages.indexOf(currentDialect.substr(0,2)) : indexInNavigarot
+        const nextIndex = indexInNavigarot === (navigator.languages.length - 1) ? 0 : (indexInNavigarot + 1)
+        const nextDialect = navigator.languages[nextIndex]
+
+        const [langIndex, dialectIndex] = indexOfDialect(nextDialect)
+        select_language.selectedIndex = langIndex;
+        updateCountry();
+        select_dialect.selectedIndex = dialectIndex;
+        console.log('Current: dialect:', select_dialect.value)
+
+        // Notify about new dialect
+        socket.send(JSON.stringify({
+          headers: { type: 'language' },
+          body: { language: select_dialect.value }
+        }))
+
+        console.log('Need re-start:', recognizing)
+        // re-start
+        if (recognizing) {
+          restarting = true
+          startButton({ timeStamp: new Date().getTime() })
+        }
+      }
+      return
+    }
+
+
+    //document.getElementById("storage").innerHTML = data
+  }
+  socket.onopen = function () {
+    // socket.send('Hello server!')
+  }
+  
 </script>
 
 </html>
