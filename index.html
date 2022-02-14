@@ -632,28 +632,18 @@
 
 </body>
 <script>
-  const socket = new WebSocket("ws://localhost:5857");
-  socket.onmessage = function (event) {
-    var message = JSON.parse(event.data)
-    console.log(message)
-    if (message.headers?.type === 'init') {
-      alert(message.body)
-      return
-    } else if (message.headers?.type === 'start-stop') {
-      var startStop = message.body
-      if (recognizing === startStop.isStarted) {
-        return
-      }
-      startButton({ timeStamp: new Date().getTime() })
-      return
+  function updateCountry() {
+    for (var i = select_dialect.options.length - 1; i >= 0; i--) {
+      select_dialect.remove(i);
     }
-
-
-    //document.getElementById("storage").innerHTML = data
+    var list = langs[select_language.selectedIndex];
+    for (var i = 1; i < list.length; i++) {
+      select_dialect.options.add(new Option(list[i][1], list[i][0]));
+    }
+    select_dialect.style.visibility = list[1].length == 1 ? 'hidden' : 'visible';
   }
-  socket.onopen = function () {
-    // socket.send('Hello server!')
-  }
+
+  
   var langs =
     [['Afrikaans', ['af-ZA']],
     ['Bahasa Indonesia', ['id-ID']],
@@ -661,13 +651,13 @@
     ['Català', ['ca-ES']],
     ['Čeština', ['cs-CZ']],
     ['Deutsch', ['de-DE']],
-    ['English', ['en-AU', 'Australia'],
+    ['English', ['en-US', 'United States'],
+      ['en-AU', 'Australia'],
       ['en-CA', 'Canada'],
       ['en-IN', 'India'],
       ['en-NZ', 'New Zealand'],
       ['en-ZA', 'South Africa'],
-      ['en-GB', 'United Kingdom'],
-      ['en-US', 'United States']],
+      ['en-GB', 'United Kingdom']],      
     ['Español', ['es-AR', 'Argentina'],
       ['es-BO', 'Bolivia'],
       ['es-CL', 'Chile'],
@@ -721,24 +711,30 @@
   for (var i = 0; i < langs.length; i++) {
     select_language.options[i] = new Option(langs[i][0], i);
   }
-  select_language.selectedIndex = 6;
+
+  const [langIndex, dialectIndex] = indexOfDialect(navigator.languages[0])
+  select_language.selectedIndex = langIndex || 6;
   updateCountry();
-  select_dialect.selectedIndex = 6;
+  select_dialect.selectedIndex = dialectIndex || 0;
+  
   showInfo('info_start');
 
-  function updateCountry() {
-    for (var i = select_dialect.options.length - 1; i >= 0; i--) {
-      select_dialect.remove(i);
-    }
-    var list = langs[select_language.selectedIndex];
-    for (var i = 1; i < list.length; i++) {
-      select_dialect.options.add(new Option(list[i][1], list[i][0]));
-    }
-    select_dialect.style.visibility = list[1].length == 1 ? 'hidden' : 'visible';
+  function indexOfDialect(dialect) {
+    for (var i = 0; i < langs.length; i++) {
+    var list = langs[i];
+      for (var j = 1; j < list.length; j++) {
+        const currentDialect = list[j][0]
+        if ((currentDialect.length === dialect.length && currentDialect === dialect)
+          || currentDialect.substr(0,2) === dialect) {
+          return [i, j - 1]
+        }
+      }
+    }    
   }
 
   var final_transcript = '';
   var recognizing = false;
+  var restarting = false;
   var ignore_onend;
   var start_timestamp;
   if (!('webkitSpeechRecognition' in window)) {
@@ -753,6 +749,9 @@
       recognizing = true;
       showInfo('info_speak_now');
       start_img.src = 'mic-animate.gif';
+      if (restarting) {
+        restarting = false
+      }
     };
 
     recognition.onerror = function (event) {
@@ -778,6 +777,12 @@
 
     recognition.onend = function () {
       recognizing = false;
+
+      if (restarting) {
+        console.log('re-starting...')
+        startButton({ timeStamp: new Date().getTime() })      
+      }
+
       if (ignore_onend) {
         return;
       }
@@ -792,13 +797,12 @@
         var range = document.createRange();
         range.selectNode(document.getElementById('final_span'));
         window.getSelection().addRange(range);
-      }
+      }      
     };
 
     let alreadyFinal = ''
 
     recognition.onresult = function (event) {
-      console.log(event.results)
       var interim_transcript = '';
       for (var i = event.resultIndex; i < event.results.length; ++i) {
         if (event.results[i].isFinal) {
@@ -851,11 +855,14 @@
 
   function startButton(event) {
     if (recognizing) {
+      recognizing = false;
       recognition.stop();
+      console.log('stop recognizing')
       return;
     }
     final_transcript = '';
     recognition.lang = select_dialect.value;
+    console.log('start recognizing', 'lang:', recognition.lang)
     recognition.start();
     ignore_onend = false;
     final_span.innerHTML = '';
@@ -888,6 +895,66 @@
     copy_button.style.display = style;
     copy_info.style.display = 'none';
   }
+
+  const socket = new WebSocket("ws://localhost:5857");
+  socket.onmessage = function (event) {
+    var message = JSON.parse(event.data)
+    console.log(message)
+    if (message.headers?.type === 'init') {
+      const currentDialect = select_dialect.value
+      socket.send(JSON.stringify({
+        headers: { type: 'language' },
+        body: { language: currentDialect }
+      }))
+      alert(message.body)
+      return
+    } else if (message.headers?.type === 'start-stop') {
+      var startStop = message.body
+      if (recognizing === startStop.isStarted) {
+        return
+      }
+      startButton({ timeStamp: new Date().getTime() })
+      return
+    } else if (message.headers?.type === 'language') {
+      var body = message.body
+      const currentDialect = select_dialect.value
+      if (!body.language || currentDialect !== body.language) {
+        const currentDialect = select_dialect.value
+        let indexInNavigarot = navigator.languages.indexOf(currentDialect)
+        indexInNavigarot = indexInNavigarot === -1
+          ? navigator.languages.indexOf(currentDialect.substr(0,2)) : indexInNavigarot
+        const nextIndex = indexInNavigarot === (navigator.languages.length - 1) ? 0 : (indexInNavigarot + 1)
+        const nextDialect = navigator.languages[nextIndex]
+
+        const [langIndex, dialectIndex] = indexOfDialect(nextDialect)
+        select_language.selectedIndex = langIndex;
+        updateCountry();
+        select_dialect.selectedIndex = dialectIndex;
+        console.log('Current: dialect:', select_dialect.value)
+
+        // Notify about new dialect
+        socket.send(JSON.stringify({
+          headers: { type: 'language' },
+          body: { language: select_dialect.value }
+        }))
+
+        console.log('Need re-start:', recognizing)
+        // re-start
+        if (recognizing) {
+          restarting = true
+          startButton({ timeStamp: new Date().getTime() })
+        }
+      }
+      return
+    }
+
+
+    //document.getElementById("storage").innerHTML = data
+  }
+  socket.onopen = function () {
+    // socket.send('Hello server!')
+  }
+  
 </script>
 
 </html>
